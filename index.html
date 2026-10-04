@@ -348,7 +348,7 @@
         min-height: 48px;
       }
       #home-btn {
-        right: calc(68px + env(safe-area-inset-right, 0px));
+        right: calc(12px + env(safe-area-inset-right, 0px));
         display: none; /* 게임 플레이 중에만 표시 (loop에서 전환) */
       }
       #snd-btn,
@@ -357,6 +357,23 @@
       }
       #snd-btn {
         right: calc(12px + env(safe-area-inset-right, 0px));
+      }
+          /* ===== 모바일 화면 맞춤 ===== */
+      :root {
+        padding-top: 0;
+        padding-bottom: 0;
+      }
+      canvas {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      #ov {
+        position: fixed;
+      }
+      #home-btn {
+        top: calc(76px + env(safe-area-inset-top, 0px)); /* 소리 버튼 바로 아래에 세로로 쌓음 */
       }
     </style>
   </head>
@@ -375,20 +392,23 @@
       const DPR = Math.min(window.devicePixelRatio || 1, 2);
       let W, H;
       function rs() {
-        W = innerWidth;
-        H = innerHeight;
+        // 실제로 보이는 캔버스 크기를 기준으로 맞춤 (모바일 주소창/하단바 때문에 innerHeight와 달라지는 문제 방지)
+        W = cv.clientWidth || innerWidth;
+        H = cv.clientHeight || innerHeight;
         cv.width = Math.round(W * DPR);
         cv.height = Math.round(H * DPR);
         g.setTransform(DPR, 0, 0, DPR, 0, 0); // 크기를 바꾸면 변환이 초기화되므로 다시 설정
       }
       rs();
       onresize = rs;
+      if (window.ResizeObserver) new ResizeObserver(() => rs()).observe(cv);
+      if (window.visualViewport) visualViewport.addEventListener("resize", rs);
       addEventListener("orientationchange", () => setTimeout(rs, 200));
 
       // ======== 모바일 최적화 ========
       const MOBILE =
         matchMedia("(pointer: coarse)").matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
-      const MAX_EN = MOBILE ? 70 : 110; // 동시 적 최대 수 (모바일은 줄여서 프레임 방어)
+      const MAX_EN = MOBILE ? 55 : 110; // 동시 적 최대 수 (모바일은 줄여서 프레임 방어)
       if (MOBILE) {
         // 모바일에서 가장 무거운 발광(shadowBlur) 효과를 끔
         try {
@@ -1088,7 +1108,7 @@
 
       // ======== 유틸리티 · 전투 공통 함수 (이동, 투사체, 피해, 적 생성) ========
       function toast(s) {
-        G.msg.push({ s, t: 3.2 });
+        G.msg.push({ s, t: MOBILE ? 4.5 : 3.2 });
       }
       function mv(e, t, s, dt) {
         const a = ang(e, t);
@@ -1188,7 +1208,7 @@
         const x = Math.max(10, Math.min(MAP - 10, P.x + Math.cos(a) * d)),
           y = Math.max(10, Math.min(MAP - 10, P.y + Math.sin(a) * d));
         mk(
-          G.e2 && R() < 0.35 && (G.s < 5 || G.en.filter((e) => e.sk == "snipe").length < 3)
+          G.e2 && R() < (MOBILE ? 0.17 : 0.22) && (G.s < 5 || G.en.filter((e) => e.sk == "snipe").length < 3)
             ? G.st.e2
             : G.st.e1,
           x,
@@ -1581,9 +1601,9 @@
         }
         G.sp -= dt;
         if (G.sp <= 0 && G.en.length < MAX_EN) {
-          const iv = Math.max(0.45, 2.5 - G.t * 0.011);
+          const iv = Math.max(0.45, 2.5 - G.t * 0.011) * (MOBILE ? 1.4 : 1); // 휴대폰은 스폰 간격 1.4배
           G.sp = iv * (G.boss ? 1.6 : 1) * (G.alert ? 0.5 : 1);
-          for (let i = 0, n = 1 + Math.floor(G.t / 70); i < n; i++) spawn();
+          for (let i = 0, n = 1 + Math.floor(G.t / (MOBILE ? 100 : 70)); i < n; i++) spawn();
         }
 
         // enemies
@@ -2106,7 +2126,7 @@
         );
         if (G.boss) {
           const b = G.boss,
-            w = Math.min(420, W - 40);
+            w = Math.min(420, W - 130);
           rb(
             W / 2 - w / 2,
             36,
@@ -2133,14 +2153,30 @@
         g.font = "12px system-ui";
         g.fillText(`HP ${Math.ceil(P.hp)}/${P.mh}`, 24, H - 26);
         g.textAlign = "center";
-        G.msg.forEach((m, i) => {
-          g.font = "bold 18px system-ui";
-          g.fillStyle = "#000a";
-          const w = g.measureText(m.s).width + 24;
-          g.fillRect(W / 2 - w / 2, G.boss ? 84 + i * 34 : 44 + i * 34, w, 28);
-          g.fillStyle = "#ffe58a";
-          g.fillText(m.s, W / 2, (G.boss ? 84 : 44) + i * 34 + 14);
-        });
+        // 알림: 오른쪽 버튼을 피해 폭을 제한하고, 길면 두 줄로 나눠서 표시
+        {
+          let ty = G.boss ? 84 : 44;
+          const maxW = W - 130;
+          g.font = "bold " + (MOBILE ? 17 : 18) + "px system-ui";
+          g.textBaseline = "middle";
+          for (const m of G.msg) {
+            let lines = [m.s];
+            if (g.measureText(m.s).width > maxW - 24) {
+              const mid = m.s.length / 2;
+              let sp = -1;
+              for (let k = 0; k < m.s.length; k++)
+                if (m.s[k] === " " && (sp < 0 || Math.abs(k - mid) < Math.abs(sp - mid))) sp = k;
+              if (sp > 0) lines = [m.s.slice(0, sp), m.s.slice(sp + 1)];
+            }
+            const w = Math.min(maxW, Math.max(...lines.map((l) => g.measureText(l).width)) + 24),
+              h = lines.length * 24 + 8;
+            g.fillStyle = "#000c";
+            g.fillRect(W / 2 - w / 2, ty, w, h);
+            g.fillStyle = "#ffe58a";
+            lines.forEach((l, li) => g.fillText(l, W / 2, ty + 16 + li * 24));
+            ty += h + 6;
+          }
+        }
         // minimap
         const ms = Math.min(130, W * 0.3),
           mx = W - ms - 10,

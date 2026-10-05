@@ -406,7 +406,13 @@
       addEventListener("orientationchange", () => setTimeout(rs, 200));
 
       // ======== 모바일 최적화 ========
-      const MAX_EN = 110; // 동시 적 최대 수
+      // 휴대폰 보정은 게임 후반부(LATE_T초 이후)에만 적용: 잡몹 수/스폰량을 줄여줌
+      const MOBILE =
+        matchMedia("(pointer: coarse)").matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
+      const LATE_T = 100; // 후반부 기준 시간(초) - 필요하면 조절
+      const lateMob = () => MOBILE && G.t >= LATE_T;
+      const MAX_EN_BASE = 110; // 동시 적 최대 수
+      const maxEn = () => (lateMob() ? 55 : MAX_EN_BASE);
       addEventListener("contextmenu", (e) => e.preventDefault()); // 길게 누르기 메뉴 방지
       const MAP = 2200,
         R = Math.random,
@@ -487,9 +493,9 @@
       };
       Object.assign(BD, {
         master: { em: "🧘", n: "쿵푸 사부", hp: 700, r: 30, sp: 70 },
-        dragon: { em: "🐉", n: "용", hp: 1300, r: 36, sp: 75 },
+        dragon: { em: "🐉", n: "용춤 대장", hp: 1300, r: 36, sp: 75 },
         warden: { em: "🧑‍✈️", n: "국경 경비대장", hp: 750, r: 30, sp: 60 },
-        general: { em: "🎖️", n: "김정은", hp: 1400, r: 36, sp: 70 },
+        general: { em: "🎖️", n: "휴전선 총사령관", hp: 1400, r: 36, sp: 70 },
       });
       // ======== 보스 등장 시간 / 강화 목록 (l=현재 레벨, mx=최대 레벨, f=적용 함수) ========
       const BT = [75, 150];
@@ -1192,7 +1198,7 @@
         const x = Math.max(10, Math.min(MAP - 10, P.x + Math.cos(a) * d)),
           y = Math.max(10, Math.min(MAP - 10, P.y + Math.sin(a) * d));
         mk(
-          G.e2 && R() < 0.22 && (G.s < 5 || G.en.filter((e) => e.sk == "snipe").length < 3)
+          G.e2 && R() < (lateMob() ? 0.17 : 0.22) && (G.s < 5 || G.en.filter((e) => e.sk == "snipe").length < 3)
             ? G.st.e2
             : G.st.e1,
           x,
@@ -1573,10 +1579,10 @@
           G.bi++;
         }
         G.sp -= dt;
-        if (G.sp <= 0 && G.en.length < MAX_EN) {
-          const iv = Math.max(0.45, 2.5 - G.t * 0.011);
+        if (G.sp <= 0 && G.en.length < maxEn()) {
+          const iv = Math.max(0.45, 2.5 - G.t * 0.011) * (lateMob() ? 1.4 : 1); // 후반부 휴대폰은 스폰 간격 1.4배
           G.sp = iv * (G.boss ? 1.6 : 1) * (G.alert ? 0.5 : 1);
-          for (let i = 0, n = 1 + Math.floor(G.t / 70); i < n; i++) spawn();
+          for (let i = 0, n = 1 + Math.floor(G.t / (lateMob() ? 100 : 70)); i < n; i++) spawn();
         }
 
         // enemies

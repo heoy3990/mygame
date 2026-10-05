@@ -493,9 +493,9 @@
       };
       Object.assign(BD, {
         master: { em: "🧘", n: "쿵푸 사부", hp: 700, r: 30, sp: 70 },
-        dragon: { em: "🐉", n: "용춤 대장", hp: 1300, r: 36, sp: 75 },
+        dragon: { em: "🐉", n: "용", hp: 1300, r: 36, sp: 75 },
         warden: { em: "🧑‍✈️", n: "국경 경비대장", hp: 750, r: 30, sp: 60 },
-        general: { em: "🎖️", n: "휴전선 총사령관", hp: 1400, r: 36, sp: 70 },
+        general: { em: "🎖️", n: "김정은", hp: 1400, r: 36, sp: 70 },
       });
       // ======== 보스 등장 시간 / 강화 목록 (l=현재 레벨, mx=최대 레벨, f=적용 함수) ========
       const BT = [75, 150];
@@ -546,6 +546,13 @@
             P.hp = Math.min(P.mh, P.hp + 40);
             UI(P, "hp");
           },
+        },
+        {
+          n: "🛡️ 방어력 +8%",
+          d: "받는 피해 8% 감소",
+          mx: 5,
+          l: (P) => UL(P, "df"),
+          f: (P) => UI(P, "df"),
         },
         { n: "🎯 관통", d: "탄이 적을 +1 관통", mx: 4, l: (P) => P.pierce, f: (P) => P.pierce++ },
         {
@@ -1127,6 +1134,7 @@
       function hurt(d) {
         const P = G.P;
         if (G.won || P.inv > 0) return;
+        d *= 1 - 0.08 * UL(P, "df"); // 방어력 강화
         P.hp -= d;
         P.inv = 0.45;
         G.flash = 0.3;
@@ -1142,7 +1150,7 @@
         }
       }
       function dmgE(e, d) {
-        if (e.hp <= 0) return;
+        if (e.hp <= 0 || e.cln) return; // 분신은 피해를 받지 않음
         e.hp -= d;
         e.fl = 0.08;
         sfxHit();
@@ -1170,6 +1178,7 @@
           G.P.xp += e.xp * (1 + G.t / 100);
           if (e.boss) {
             G.boss = null;
+            if (e.k == "master") G.en.forEach((c) => c.cln && (c.hp = 0)); // 본체가 죽으면 분신도 사망
             if (e.fin) {
               G.won = 1;
               CL[G.s] = 1;
@@ -1347,14 +1356,15 @@
               if (!b.cl && b.hp < b.mh / 2) {
                 b.cl = 1;
                 toast("분신술!");
-                for (let i = 0; i < 2; i++) {
-                  const c = mk(
-                    { em: "🧘", hp: 1, sp: 100, dmg: 9, r: 22, xp: 0 },
-                    b.x + (i ? 70 : -70),
-                    b.y,
-                  );
-                  c.hp = c.mh = 1;
-                }
+                // 분신 1명: 본체와 같은 능력(bossAI 공유), 타게팅/피해 불가, 본체가 죽으면 함께 사망
+                const c = mk(
+                  { em: "🧘", hp: 1, sp: b.sp, dmg: 12, r: b.r, xp: 0 },
+                  b.x + 70,
+                  b.y,
+                  { cln: 1, k: "master", cl: 1, sw: 0, ds: 0, tm: 2, bt: 5 },
+                );
+                c.hp = c.mh = 1e9;
+                c.dmg = b.dmg;
               }
               swing(b, dt, 110, 14, (b) => {
                 const a = ang(b, P);
@@ -1387,7 +1397,7 @@
                     y: Math.max(40, Math.min(MAP - 40, P.y + (R() - 0.5) * 420)),
                     r: 60,
                     t: 1.2,
-                    d: 14,
+                    d: 26,
                   });
               for (let i = 1; i <= b.ns; i++) {
                 const q = b.tr[Math.max(0, b.tr.length - 1 - i * 4)];
@@ -1442,7 +1452,7 @@
                 b.en = 1;
                 b.dmg *= 1.8;
                 b.sp *= 2.4;
-                toast("장갑차가 부서졌다! 총사령관이 직접 쫓아온다!");
+                toast("장갑차가 부서졌다! 김정은이 직접 쫓아온다!");
               }
               if (b.en) mv(b, P, b.sp, dt);
               else {
@@ -1463,7 +1473,7 @@
                       y: Math.max(40, Math.min(MAP - 40, P.y + (i ? (R() - 0.5) * 360 : 0))),
                       r: 70,
                       t: 2,
-                      d: 18,
+                      d: 33,
                     });
                 }
               }
@@ -1512,7 +1522,7 @@
         P.ang += dt * 4.5;
         if (P.burn > 0) {
           P.burn -= dt;
-          P.hp -= 4 * dt;
+          P.hp -= 4 * dt * (1 - 0.08 * UL(P, "df"));
           if (P.hp <= 0) hurt(1);
         }
         // move
@@ -1603,7 +1613,7 @@
           }
           const bf = e.buff > 0 ? 1.5 : 1;
           if (e.buff > 0) e.buff -= dt;
-          if (e.boss) bossAI(e, dt);
+          if (e.boss || e.cln) bossAI(e, dt);
           else if (e.rush) {
             if (e.rush.t > 0) e.rush.t -= dt;
             else {
@@ -1622,7 +1632,7 @@
               const f = 1 + (G.sf - 1) * 0.5;
               if (e.sk == "arrow")
                 shot(e, ang(e, P), 340, { k: "arrow", r: 4, dmg: 7 * f, col: "#d6f04a" });
-              else if (e.sk == "fw") G.fw.push({ x: P.x, y: P.y, r: 55, t: 1, d: 10 });
+              else if (e.sk == "fw") G.fw.push({ x: P.x, y: P.y, r: 55, t: 1, d: 14 * f });
               else if (e.sk == "snipe") {
                 e.aim = 1;
                 e.aa = ang(e, P);
@@ -1653,7 +1663,7 @@
           let t = null,
             bd = 1e9;
           for (const e of G.en) {
-            if (e.hp <= 0 || e.x < cx || e.x > cx + W || e.y < cy || e.y > cy + H) continue;
+            if (e.hp <= 0 || e.cln || e.x < cx || e.x > cx + W || e.y < cy || e.y > cy + H) continue;
             const d = D(e, P) - (e.boss ? 1e5 : 0);
             if (d < bd) {
               bd = d;
@@ -1697,7 +1707,7 @@
           b.y += b.vy * dt;
           b.life -= dt;
           for (const e of G.en) {
-            if (e.hp <= 0 || b.h.has(e) || D(b, e) > e.r + 7) continue;
+            if (e.hp <= 0 || e.cln || b.h.has(e) || D(b, e) > e.r + 7) continue;
             b.h.add(e);
             dmgE(e, b.dmg);
             if (P.xp2 > 0) {
@@ -1915,16 +1925,16 @@
               g.fill();
             }
           if (e.stun > 0) em("💫", e.x, e.y - e.r - 10, 12);
-          g.globalAlpha = e.fl > 0 ? 0.5 : 1;
+          g.globalAlpha = e.cln ? 0.55 : e.fl > 0 ? 0.5 : 1;
           em(e.em, e.x, e.y, e.r);
           g.globalAlpha = 1;
-          if (!e.boss) {
+          if (!e.boss && !e.cln) {
             g.fillStyle = "#000a";
             g.fillRect(e.x - 14, e.y - e.r - 9, 28, 4);
             g.fillStyle = "#e33";
             g.fillRect(e.x - 14, e.y - e.r - 9, 28 * Math.max(0, e.hp / e.mh), 4);
           }
-          if (e.boss && e.sw > 0) {
+          if ((e.boss || e.cln) && e.sw > 0) {
             const p = 1 - e.sw / 0.45,
               a = e.sa - 1.2 + 2.4 * p,
               rg = e.k == "axe" ? 150 : 130;
@@ -2169,8 +2179,8 @@
         g.strokeStyle = "#fff6";
         g.strokeRect(mx + cx * k, my + cy * k, W * k, H * k);
         G.en.forEach((e) => {
-          g.fillStyle = e.boss ? "#ff0" : "#f44";
-          const s = e.boss ? 5 : 2;
+          g.fillStyle = e.boss || e.cln ? "#ff0" : "#f44";
+          const s = e.boss || e.cln ? 5 : 2;
           g.fillRect(mx + e.x * k - s / 2, my + e.y * k - s / 2, s, s);
         });
         g.fillStyle = "#fff";

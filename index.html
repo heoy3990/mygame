@@ -412,6 +412,10 @@
       const LATE_T = 100; // 후반부 기준 시간(초) - 필요하면 조절
       const lateMob = () => MOBILE && G.t >= LATE_T;
       const MAX_EN_BASE = 110; // 동시 적 최대 수
+      // 스폰율(초당 마리) = min(SPAWN_MAX, SPAWN_BASE + SPAWN_GROW × 시간) - 필요하면 조절
+      const SPAWN_BASE = 1.0; // 시작 스폰율
+      const SPAWN_GROW = 0.012; // 초당 증가량
+      const SPAWN_MAX = 3.5; // 최대 스폰율
       const maxEn = () => (lateMob() ? 55 : MAX_EN_BASE);
       addEventListener("contextmenu", (e) => e.preventDefault()); // 길게 누르기 메뉴 방지
       const MAP = 2200,
@@ -449,10 +453,10 @@
           bg: "#6b5a46",
           story:
             "사막을 탈출해 실크로드에 들어섰지만, 너무 배고파 빵을 훔치다가 걸려서 쫓기는 신세가 되었다..",
-          e1: { em: "💂", hp: 26, sp: 88, dmg: 10, r: 14, xp: 6 },
-          e2: { em: "🧑‍🌾", hp: 20, sp: 60, dmg: 5, r: 13, xp: 9, rng: 1, rc: 3, sk: "mol" },
+          e1: { em: "💂", hp: 15, sp: 88, dmg: 7, r: 14, xp: 6 },
+          e2: { em: "🧨", hp: 22, sp: 60, dmg: 5, r: 13, xp: 9, rng: 1, rc: 3.4, sk: "fw" },
           m1: "시장 경비대가 추격을 시작한다!",
-          m2: "상인들이 화염병을 던진다!",
+          m2: "폭죽 장수가 폭죽을 던진다!",
           t2: 30,
           b: ["captain", "rich"],
         },
@@ -462,10 +466,10 @@
         bg: "#7a3b32",
         story:
           '경비병들을 따돌리고 중국에 도착했지만, 쿵푸 도장에서 돈을 훔치다 걸려서 쫓기는 신세가 되었다..',
-        e1: { em: "🥋", hp: 15, sp: 105, dmg: 7, r: 12, xp: 5 },
-        e2: { em: "🧨", hp: 22, sp: 60, dmg: 5, r: 13, xp: 9, rng: 1, rc: 3.4, sk: "fw" },
+        e1: { em: "🥋", hp: 26, sp: 105, dmg: 10, r: 12, xp: 5 },
+        e2: { em: "🧑‍🌾", hp: 20, sp: 60, dmg: 5, r: 13, xp: 9, rng: 1, rc: 3, sk: "mol" },
         m1: "수련생들이 쫓아온다!",
-        m2: "폭죽 장수가 폭죽을 던진다!",
+        m2: "상인들이 화염병을 던진다!",
         t2: 30,
         b: ["master", "dragon"],
       };
@@ -474,7 +478,7 @@
         bg: "#2b313c",
         story:
           "중국에서 배를 타고 한국으로 가려 했으나, 돈이 부족해 북한을 거쳐 가기로 결심했다.",
-        e1: { em: "🪖", hp: 32, sp: 90, dmg: 11, r: 14, xp: 7 },
+        e1: { em: "🪖", hp: 25, sp: 90, dmg: 11, r: 14, xp: 7 },
         e2: { em: "🎯", hp: 20, sp: 55, dmg: 6, r: 13, xp: 10, rng: 1, rc: 3.2, sk: "snipe" },
         m1: "탐조등을 피해라! 빛에 걸리면 경보가 울린다!",
         m2: "저격수가 조준한다! 붉은 선을 피하라!",
@@ -1376,33 +1380,62 @@
             break;
           case "dragon":
             {
-              b.tr = b.tr || [];
-              const l = b.tr[b.tr.length - 1];
-              if (!l || Math.hypot(b.x - l.x, b.y - l.y) >= 6) {
-                b.tr.push({ x: b.x, y: b.y });
-                if (b.tr.length > 120) b.tr.shift();
-              }
+              // 🐉 용 (리메이크): 화염 브레스 / 낙뢰 / 꼬리 휩쓸기, 체력 30% 이하 분노
               if (!b.en && b.hp < b.mh * 0.3) {
                 b.en = 1;
-                b.sp *= 1.4;
+                b.sp *= 1.3;
                 toast("🔥 용이 분노한다!");
               }
-              b.ns = b.en ? 12 : 8;
-              const p = b.ds;
-              dashAI(b, dt, b.en ? 0.6 : 0.9, b.en ? 640 : 540, 0.6, b.en ? 2.4 : 3.5);
-              if (p == 2 && b.ds == 0)
-                for (let i = 0; i < 5; i++)
+              const f = b.en ? 0.65 : 1;
+              b.bc = (b.bc ?? 2) - dt; // 브레스 쿨타임
+              b.lc = (b.lc ?? 5) - dt; // 낙뢰 쿨타임
+              b.tc = (b.tc ?? 0) - dt; // 꼬리 휩쓸기 쿨타임
+              // 🔥 화염 브레스: 0.7초 예고(붉은 부채꼴) 뒤 같은 방향으로 부채꼴 화염탄 연속 발사
+              if (b.wu > 0) {
+                b.wu -= dt;
+                b.ba = ang(b, P);
+                if (b.wu <= 0) b.bw = 0;
+              } else if (b.bn > 0) {
+                b.bw -= dt;
+                if (b.bw <= 0) {
+                  b.bw = 0.28;
+                  b.bn--;
+                  for (let i = -2; i <= 2; i++)
+                    shot(b, b.ba + i * 0.2, 340, { k: "fire", r: 9, dmg: 10, col: "#ff6a1a" });
+                }
+              }
+              const busy = b.wu > 0 || b.bn > 0;
+              if (b.bc <= 0 && !busy) {
+                b.bc = 4.5 * f;
+                b.wu = 0.7;
+                b.bn = b.en ? 4 : 3;
+              }
+              // ⚡ 낙뢰: 내 위치 + 주변 원형으로 낙뢰 예고 후 폭발
+              if (b.lc <= 0) {
+                b.lc = 7 * f;
+                const n = b.en ? 6 : 4,
+                  a0 = R() * 6.283;
+                const put = (x, y) =>
                   G.fw.push({
-                    x: Math.max(40, Math.min(MAP - 40, P.x + (R() - 0.5) * 420)),
-                    y: Math.max(40, Math.min(MAP - 40, P.y + (R() - 0.5) * 420)),
+                    x: Math.max(40, Math.min(MAP - 40, x)),
+                    y: Math.max(40, Math.min(MAP - 40, y)),
                     r: 60,
                     t: 1.2,
                     d: 26,
                   });
-              for (let i = 1; i <= b.ns; i++) {
-                const q = b.tr[Math.max(0, b.tr.length - 1 - i * 4)];
-                if (D(q, P) < 16 + P.r) hurt(10);
+                put(P.x, P.y);
+                for (let i = 0; i < n; i++) {
+                  const a = a0 + (i / n) * 6.283,
+                    dd = 150 + R() * 90;
+                  put(P.x + Math.cos(a) * dd, P.y + Math.sin(a) * dd);
+                }
               }
+              // 🌀 꼬리 휩쓸기: 너무 가까이 붙으면 용 주변 큰 원 범위 공격
+              if (b.tc <= 0 && D(b, P) < 170) {
+                b.tc = 5 * f;
+                G.fw.push({ x: b.x, y: b.y, r: 150, t: 0.8, d: 22 });
+              }
+              mv(b, P, b.sp * (busy ? 0.35 : 1), dt);
             }
             break;
           case "warden":
@@ -1488,16 +1521,11 @@
             const f = en ? 0.55 : 1;
             mv(b, P, b.sp * (en ? 1.6 : 1), dt);
             b.cd -= dt;
-            b.bt -= dt;
             if (b.cd <= 0) {
               b.cd = 2 * f;
               const a = ang(b, P);
               for (let i = -2; i <= 2; i++)
                 shot(b, a + i * 0.2, 330, { k: "coin", r: 8, dmg: 7, col: "#ffd23a" });
-            }
-            if (b.bt <= 0) {
-              b.bt = 3.5 * f;
-              shot(b, ang(b, P), 260, { k: "mol", r: 9, dmg: 5, col: "#ff7a1a", burn: 3 });
             }
           }
         }
@@ -1590,9 +1618,11 @@
         }
         G.sp -= dt;
         if (G.sp <= 0 && G.en.length < maxEn()) {
-          const iv = Math.max(0.45, 2.5 - G.t * 0.011) * (lateMob() ? 1.4 : 1); // 후반부 휴대폰은 스폰 간격 1.4배
-          G.sp = iv * (G.boss ? 1.6 : 1) * (G.alert ? 0.5 : 1);
-          for (let i = 0, n = 1 + Math.floor(G.t / (lateMob() ? 100 : 70)); i < n; i++) spawn();
+          // 스폰율에 맞춰 한 번에 n마리씩, 간격은 n/스폰율 (후반부 휴대폰은 스폰율 ×0.7)
+          const r = Math.min(SPAWN_MAX, SPAWN_BASE + SPAWN_GROW * G.t) * (lateMob() ? 0.7 : 1),
+            n = Math.max(1, Math.ceil(r * 0.7));
+          G.sp = (n / r) * (G.boss ? 1.6 : 1) * (G.alert ? 0.5 : 1);
+          for (let i = 0; i < n; i++) spawn();
         }
 
         // enemies
@@ -1916,14 +1946,13 @@
             g.lineTo(e.x + Math.cos(e.aa) * 700, e.y + Math.sin(e.aa) * 700);
             g.stroke();
           }
-          if (e.k == "dragon" && e.tr)
-            for (let i = e.ns; i >= 1; i--) {
-              const q = e.tr[Math.max(0, e.tr.length - 1 - i * 4)];
-              g.fillStyle = i % 2 ? "#d33" : "#fc3";
-              g.beginPath();
-              g.arc(q.x, q.y, 18 - i * 0.4, 0, 7);
-              g.fill();
-            }
+          if (e.k == "dragon" && (e.wu > 0 || e.bn > 0)) {
+            g.fillStyle = e.wu > 0 ? "#f553" : "#f334";
+            g.beginPath();
+            g.moveTo(e.x, e.y);
+            g.arc(e.x, e.y, 420, e.ba - 0.45, e.ba + 0.45);
+            g.fill();
+          }
           if (e.stun > 0) em("💫", e.x, e.y - e.r - 10, 12);
           g.globalAlpha = e.cln ? 0.55 : e.fl > 0 ? 0.5 : 1;
           em(e.em, e.x, e.y, e.r);
